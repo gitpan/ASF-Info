@@ -4,7 +4,8 @@ require 5.005_62;
 use strict;
 use warnings;
 use vars qw($VERSION @ISA);
-$VERSION = '1.00';
+use constant DEBUG => 0;
+$VERSION = '1.01';
 
 use Video::Info;
 
@@ -14,7 +15,7 @@ use Video::Info;
 # ASF GUID signatures
 #
 #base ASF object guids
-use constant header                        => 0x75b22630;
+use constant Header                        => 0x75b22630;
 use constant data                          => 0x75b22636;
 use constant simple_index                  => 0x33000890;
 
@@ -58,26 +59,26 @@ use constant header_2_0                    => 0xD6E229D1;
 ## Notice use of closures and caller() to restrict setting private vars
 ## to current class but overloading everything in one sub.  
 ##------------------------------------------------------------------------
-#for my $field ( qw( type scale vrate vcodec vstreams 
-#		    astreams achans arate fps vframes width height ) ) 
-#{
-#    my $slot    = __PACKAGE__ . "::$field";
-#    no strict 'refs';
+for my $field ( qw( type scale vrate vcodec vstreams duration
+		    astreams achans arate width height ) )  #fps vframes
+{
+    my $slot    = __PACKAGE__ . "::$field";
+    no strict 'refs';
 
-#    *$field = sub { 
-#	my $self = shift;
-#	my $caller = caller;
+    *$field = sub { 
+	my $self = shift;
+	my $caller = caller;
 
-#	## restrict setting values to our modules
-#	if ( ref( $self ) eq $caller && scalar @_ ) {
-#	    ## print "Setting $field == $_[0]\n";
-#	    $self->{$slot} = shift if @_;
-#	}
+	## restrict setting values to our modules
+	if ( ref( $self ) eq $caller && scalar @_ ) {
+	    ## print "Setting $field == $_[0]\n";
+	    $self->{$slot} = shift if @_;
+	}
 	
-#	return $self->{$slot} 
-#    };
+	return $self->{$slot} 
+    };
 
-#}
+}
 1;
 
 ##------------------------------------------------------------------------
@@ -93,7 +94,20 @@ sub new {
 
   $self->handle($param{-file});
 
+  #we should call $self->SUPER() here
+
   return $self;
+}
+
+#this should be put in a closure, but i don't know how to get it to
+#work.  Ben?
+sub header {
+  my $self = shift;
+  my $val  = shift;
+  return undef unless ref $self;
+  return $self->{header} unless $val;
+  $self->{header} = $val;
+  return $val;
 }
 
 ##------------------------------------------------------------------------
@@ -109,11 +123,16 @@ sub probe {
 	my $header;
 
 	sysread($fh,$header,24) or die "probe(): $!";
-	die "not an ASF" unless unpack("V",substr($header,0,4)) == header;
-    $self->type('ASF');
+	die "not an ASF" unless unpack("V",substr($header,0,4)) == Header;
+	$self->type('ASF');
 	my($h1,$h2) = unpack("VV",substr($header,16,8));
 	my $headersize = ($h2 * 0xffffffff) + $h1;
-	sysread($fh,$header,$headersize,24) or die "probe(): $!";
+#my $headersize = 102400;
+	my $bytes = sysread($fh,$header,$headersize,24);
+	die "probe() sysread: $!" unless $bytes = $headersize;
+#warn length($header);
+#exit;
+	$self->header($header);
 
 	my %guid = ();
 
@@ -121,7 +140,7 @@ sub probe {
 		my $window = substr($header,$_,4);
 
 		$guid{codec_list}         = $_ if(unpack("V",$window)) == codec_list;
-		$guid{header}             = $_ if(unpack("V",$window)) == header;
+		$guid{header}             = $_ if(unpack("V",$window)) == Header;
 		$guid{audio_media}        = $_ if(unpack("V",$window)) == audio_media;
 		$guid{video_media}        = $_ if(unpack("V",$window)) == video_media;
 		$guid{audio_conceal_none} = $_ if(unpack("V",$window)) == audio_conceal_none;
@@ -150,14 +169,17 @@ sub probe {
 
 		#warn "guid $thisguid: ".$thisguidpos."-".$nextguidpos;
 
-		if($guid == header){
+		if($guid == Header){
+			warn "Header" if DEBUG;
 		  #noop yet.  we should switch modes depending on whether or not we have a 1.0 or 2.0 header
 		} elsif($guid == header_2_0){
+			warn "Header 2.0" if DEBUG;
 			#no exmple yet
 			die "header_2_0. Please email allenday\@ucla.edu";
 		}
 
 		elsif($guid == codec_list){
+			warn "codec_list" if DEBUG;
 			next unless length($head) >= 40; #prevent substr() errors on bad headers
 			my($codecs) = unpack("V",substr($head,40,4));
 
@@ -206,6 +228,7 @@ sub probe {
 		}
 
 		elsif($guid == file_properties){
+			warn "file_properties" if DEBUG;
 			next unless length($head) >= 32; #prevent substr() errors on bad headers
 
 			my($size1,$size2,$date1,$date2,$count1,$count2,$dur1,$dur2) = unpack("VVVVVVVV",substr($head,40,32));
@@ -230,6 +253,7 @@ sub probe {
 		}
 
 		elsif($guid == content_description){
+			warn "content_description" if DEBUG;
 			next unless length($head) >= 34; #prevent substr() errors on bad headers
 			my $offset = 34;
 			my($titlelen,$authlen,$copylen,$desclen,$ratlen) = unpack("vvvvv",substr($head,24,10));
@@ -247,6 +271,7 @@ sub probe {
 		}
 
 		elsif($guid == video_media){
+			warn "video_media" if DEBUG;
 			next unless length($head) >= 16; #prevent substr() errors on bad headers
 
 			my $codec = substr($head,81,4); #hack.  is it really at 81?  should be at 16 from 1.0 spec.
@@ -263,6 +288,7 @@ sub probe {
 		}
 
 		elsif($guid == audio_spread || $guid == audio_media){
+			warn "audio" if DEBUG;
 			next unless length($head) >= 18; #prevent substr() errors on bad headers
 			my($codecID,$achan,$samp,$bpsec,$blk,$bpsamp,$format) = unpack("vvVVvvv",substr($head,38,18));	
 
@@ -281,6 +307,7 @@ sub probe {
 		}
 
 		elsif($guid == script_command) {
+			warn "script_command" if DEBUG;
 		  #hmm, interesting
 		  warn "*********************script_command";
 #		  my($rawsize1,$rawsize2) = unpack("VV",substr($head,16,8));
@@ -289,19 +316,23 @@ sub probe {
 		}
 
 		elsif($guid == stream_properties){
+			warn "stream_properties" if DEBUG;
 			#noop
 		}
 
 		elsif($guid == data){
+			warn "data" if DEBUG;
 			#noop, this is the movie itself
 		}
 
 		elsif($guid == simple_index){
+			warn "simple_index" if DEBUG;
 			#no example yet
 			#warn "******************simple_index";
 		}
 
 		elsif($guid == audio_conceal_none){
+			warn "audio_conceal_none" if DEBUG;
 			#no example yet
 			#warn "******************audio_conceal_none";
 		}
@@ -348,7 +379,7 @@ with commands (to launch a web browser, for instance), for an "immersive"
 experience.  ASF is similar in structure to RIFF. (See L<RIFF::Info>).
 The morbidly curious can find out more below in I<REFERENCES>.
 
-=head2 METHODS
+=head2 INHERITED METHODS
 
 ASF::Info is a subclass of Video::Info, a wrapper module designed to
 meet your multimedia needs for many types of files.  As such, not all
@@ -365,10 +396,18 @@ properties are.
 Now, call one (or more) of the Video::Info methods to get the 
 low-down on your file.  See L<Video::Info>.
 
+=head2 CLASS SPECIFIC METHODS
+
+header() : returns the header section of the ASF file.
+
 =head1 BUGS
 
 Audio codec name mapping is incomplete.  If you know the name
 that corresponds to an audio codec ID that I don't, tell me.
+
+Some Video::Info methods are not honored, such as fps and vframes.
+I haven't been able to figure out how to extract this information from
+the ASF 1.0 spec.  Any information would be appreciated.
 
 =head1 AUTHOR
 

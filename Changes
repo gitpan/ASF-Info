@@ -1,6 +1,8 @@
 Revision history for Perl extension ASF::Info.
 
-0.01  Sat Jan 26 15:33:31 2002
+1.01  Fixed audio codec detection
+
+1.00  Sat Jan 26 15:33:31 2002
 	- original version; created by h2xs 1.20 with options
 		-X ASF::Info
 

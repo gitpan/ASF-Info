@@ -13,13 +13,14 @@ BEGIN {
 	use lib 't';
     }
     use Test;
-    plan tests => 19 }
+    plan tests => 20 }
 
 print "Loading ASF::Info...\n";
 use ASF::Info;
 ok(1);
 
 my $file = ASF::Info->new(-file=>'eg/t.asf');
+#my $file = ASF::Info->new(-file=>'eg/Lamour.asf');
 ok $file;
 ok $file->probe;
 ok $file->achans        == 2;                               warn $file->achans   if DEBUG;
@@ -39,6 +40,7 @@ ok denull($file->rating)      eq '(None)';                  warn $file->rating  
 ok denull($file->acodec)      eq 'DivX audio (WMA)';        warn $file->acodec   if DEBUG;
 ok $file->type                eq 'ASF';                     warn $file->type     if DEBUG;
 ok $file->vcodec              eq 'MP43';                    warn $file->vcodec   if DEBUG;
+ok length($file->header)      == 895;                       warn length($file->header)   if DEBUG;
 
 ##############################################################################
 #not quite sure how to derive these...
